@@ -1,10 +1,16 @@
+package test;
+
 import refusednat.table.PortTable;
 
 import java.net.InetSocketAddress;
 import java.util.*;
 
-public class test {
+public class TableTest {
     public static void main(String[] args) {
+        new TableTest().test();
+    }
+
+    void test() {
         PortTable table = new PortTable();
         InetSocketAddress lan = new InetSocketAddress("192.168.1.1", 123);
         InetSocketAddress wan = new InetSocketAddress("222.222.1.1", 124);

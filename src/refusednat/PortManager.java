@@ -1,8 +1,10 @@
 package refusednat;
 
+import refusednat.impl.IPortManager;
+
 import java.util.*;
 
-public class PortManager {
+public class PortManager implements IPortManager {
 
     private final Object portDispatcherLock = new Object();
     private PortDispatcher portDispatcher;
@@ -18,41 +20,12 @@ public class PortManager {
         portDispatcher = new PortDispatcher(retain);
         timeSet = new HashMap<>();
         overtimeThread = new Thread(this::checkOverTime);
-        overtimeThread.start();
     }
 
-    /**
-     * set the valid time for all port
-     * @param validTime how long the port will be locked
-     */
-    public void setValidTime(long validTime) {
-        this.validTime = validTime;
-    }
-
-    /**
-     * set the over time listener
-     * @param listener the listener
-     */
-    public void setOvertimeListener(OvertimeListener listener) {
-        this.overtimeListener = listener;
-    }
-
-    /**
-     * reset the valid time of the port given
-     * @param port the port to reset
-     */
-    public void refreshValidTime(int port) {
-        synchronized (portDispatcherLock) {
-            if (timeSet.containsKey(port))
-                timeSet.put(port, validTime);
-        }
-    }
-
-    /**
-     * get a port
-     * @return port, -1 if there is no port
-     */
-    public synchronized int getPort() {
+    @Override
+    public synchronized int get() {
+        if (overtimeThread.isInterrupted())
+            return -1;
         int res;
         synchronized (portDispatcherLock) {
             res = portDispatcher.get();
@@ -62,13 +35,47 @@ public class PortManager {
         return res;
     }
 
-    public void recoveryPort(int port) {
+    @Override
+    public synchronized void recover(int port) {
+        if (overtimeThread.isInterrupted())
+            return;
         synchronized (portDispatcherLock) {
             if (timeSet.containsKey(port)) {
                 timeSet.remove(port);
                 portDispatcher.recovery(port);
             }
         }
+    }
+
+    @Override
+    public void renewalPort(int port) {
+        synchronized (portDispatcherLock) {
+            if (timeSet.containsKey(port))
+                timeSet.put(port, validTime);
+        }
+    }
+
+    @Override
+    public void setConfigTime(long validTime) {
+        this.validTime = validTime;
+    }
+
+    @Override
+    public void startTimer() {
+        overtimeThread.start();
+    }
+
+    @Override
+    public void stopTimer() {
+        overtimeThread.interrupt();
+    }
+
+    public void setOvertimeListener(OvertimeListener listener) {
+        this.overtimeListener = listener;
+    }
+
+    public void finishWork() {
+        overtimeThread.interrupt();
     }
 
     /**
@@ -97,55 +104,50 @@ public class PortManager {
     }
 
     /**
-     * this function will be called when the port over time
+     * Dispatcher of ports, it does not concert about multi thread
      */
-    public interface OvertimeListener {
-        public void onOvertime(int port);
-    }
+    class PortDispatcher {
 
+        PortDispatcher(Set<Integer> retain) {
+            this(1, 65535, retain);
+        }
 
-}
+        PortDispatcher(int min, int max, Set<Integer> retain) {
+            this.min = min;
+            this.max = max;
+            this.retain = retain;
+            this.index = min;
+            this.using = new HashSet<>();
+        }
 
-class PortDispatcher {
+        private int min;
+        private int max;
+        private int index; // next port
+        private Set<Integer> retain;
+        private Set<Integer> using;
 
-    PortDispatcher(Set<Integer> retain) {
-        this(1, 65535, retain);
-    }
+        int get() {
+            // if there is no more port
+            if (retain.size() + using.size() == max - min + 1)
+                return -1;
 
-    PortDispatcher(int min, int max, Set<Integer> retain) {
-        this.min = min;
-        this.max = max;
-        this.retain = retain;
-        this.index = min;
-        this.using = new HashSet<>();
-    }
-
-    private int min;
-    private int max;
-    private int index; // next port
-    private Set<Integer> retain;
-    private Set<Integer> using;
-
-    int get() {
-        // if there is no more port
-        if (retain.size() + using.size() == max - min + 1)
-            return -1;
-
-        // find out a port unused
-        while (retain.contains(index) || using.contains(index)) {
+            // find out a port unused
+            while (retain.contains(index) || using.contains(index)) {
+                index++;
+                if (index > max)
+                    index = min;
+            }
+            int tmp = index;
             index++;
             if (index > max)
                 index = min;
+            using.add(tmp);
+            return tmp;
         }
-        int tmp = index;
-        index++;
-        if (index > max)
-            index = min;
-        using.add(tmp);
-        return tmp;
+
+        void recovery(int port) {
+            using.remove(port);
+        }
     }
 
-    void recovery(int port) {
-        using.remove(port);
-    }
 }
