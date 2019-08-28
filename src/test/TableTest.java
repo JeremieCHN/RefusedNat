@@ -3,7 +3,6 @@ package test;
 import refusednat.table.PortTable;
 
 import java.net.InetSocketAddress;
-import java.util.*;
 
 public class TableTest {
     public static void main(String[] args) {

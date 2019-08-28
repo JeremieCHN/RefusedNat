@@ -4,7 +4,7 @@ import java.net.InetSocketAddress;
 
 public class NatResult {
 
-    private boolean drop = true;
+    private boolean drop = false;
     private boolean sendToLan = false;
     private boolean sendToWan = false;
     private boolean changeTarget = false;

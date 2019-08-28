@@ -1,106 +1,75 @@
 package refusednat;
 
-import refusednat.impl.IPortManager;
-
 import java.util.*;
 
-public class PortManager implements IPortManager {
+public class PortManager {
 
-    private final Object portDispatcherLock = new Object();
     private PortDispatcher portDispatcher;
-    private Map<Integer, Long> timeSet;
-
-    private long validTime = 3000;
-    private OvertimeListener overtimeListener = null;
-
-    private Thread overtimeThread;
+    private Map<Integer, Long> portTimeSet;
+    private long configTime = 3000;
 
     public PortManager() {
-        Set<Integer> retain = new HashSet<>(Arrays.asList(8080, 123));
-        portDispatcher = new PortDispatcher(retain);
-        timeSet = new HashMap<>();
-        overtimeThread = new Thread(this::checkOverTime);
+        portDispatcher = new PortDispatcher(new HashSet<>());
+        portTimeSet = new HashMap<>();
     }
 
-    @Override
-    public synchronized int get() {
-        if (overtimeThread.isInterrupted())
-            return -1;
-        int res;
-        synchronized (portDispatcherLock) {
-            res = portDispatcher.get();
-            if (res != -1)
-                timeSet.put(res, validTime);
-        }
-        return res;
-    }
 
-    @Override
-    public synchronized void recover(int port) {
-        if (overtimeThread.isInterrupted())
-            return;
-        synchronized (portDispatcherLock) {
-            if (timeSet.containsKey(port)) {
-                timeSet.remove(port);
-                portDispatcher.recovery(port);
-            }
-        }
-    }
-
-    @Override
-    public void renewalPort(int port) {
-        synchronized (portDispatcherLock) {
-            if (timeSet.containsKey(port))
-                timeSet.put(port, validTime);
-        }
-    }
-
-    @Override
-    public void setConfigTime(long validTime) {
-        this.validTime = validTime;
-    }
-
-    @Override
-    public void startTimer() {
-        overtimeThread.start();
-    }
-
-    @Override
-    public void stopTimer() {
-        overtimeThread.interrupt();
-    }
-
-    public void setOvertimeListener(OvertimeListener listener) {
-        this.overtimeListener = listener;
-    }
-
-    public void finishWork() {
-        overtimeThread.interrupt();
+    /**
+     * get a new port, and its overtime is the default
+     *
+     * @return port
+     */
+    public int get() {
+        int port = portDispatcher.get();
+        portTimeSet.put(port, System.currentTimeMillis());
+        return port;
     }
 
     /**
-     * Check all port each 3 seconds
+     * recover the port
+     *
+     * @param port the port
      */
-    private void checkOverTime() {
-        while (true) {
-            synchronized (portDispatcherLock) {
-                timeSet.entrySet().removeIf(entry -> {
-                    entry.setValue(entry.getValue() - 3000);
-                    if (entry.getValue() < 0) {
-                        if (overtimeListener != null)
-                            overtimeListener.onOvertime(entry.getKey());
-                        return true;
-                    } else {
-                        return false;
-                    }
-                });
-            }
-            try {
-                Thread.sleep(3000);
-            } catch (InterruptedException e) {
-                break;
+    public void recover(int port) {
+        portTimeSet.remove(port);
+        portDispatcher.recovery(port);
+    }
+
+    /**
+     * Extend the overtime of the port given
+     *
+     * @param port the port
+     */
+    public void renewalPort(int port) {
+        portTimeSet.put(port, System.currentTimeMillis());
+    }
+
+    /**
+     * Set the overtime of new ports
+     *
+     * @param time millisecond
+     */
+    public void setConfigTime(long time) {
+        configTime = time;
+    }
+
+    /**
+     * check whether the port has overtime
+     *
+     * @param port the port to Check
+     * @return check result
+     */
+    public boolean checkOvertime(int port) {
+        if (portTimeSet.containsKey(port)) {
+            long time = portTimeSet.get(port);
+            if (System.currentTimeMillis() - time > configTime) {
+                recover(port);
+                return true;
+            } else {
+                return false;
             }
         }
+        return true;
     }
 
     /**
